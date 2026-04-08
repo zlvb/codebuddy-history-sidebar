@@ -1,0 +1,86 @@
+{
+  "name": "codebuddy-history-sidebar",
+  "displayName": "CodeBuddy History Sidebar",
+  "description": "常驻侧边栏显示 CodeBuddy 历史对话，点击即可切换",
+  "version": "0.1.0",
+  "publisher": "cppzhang",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codebuddy-history",
+          "title": "CB History",
+          "icon": "$(history)"
+        }
+      ]
+    },
+    "views": {
+      "codebuddy-history": [
+        {
+          "id": "codebuddyHistoryView",
+          "name": "历史对话"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codebuddyHistory.refresh",
+        "title": "刷新历史对话",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codebuddyHistory.openSession",
+        "title": "打开对话"
+      },
+      {
+        "command": "codebuddyHistory.deleteSession",
+        "title": "删除对话",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "codebuddyHistory.toggleFilter",
+        "title": "切换: 当前工作区/全部",
+        "icon": "$(filter)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "codebuddyHistory.refresh",
+          "when": "view == codebuddyHistoryView",
+          "group": "navigation"
+        },
+        {
+          "command": "codebuddyHistory.toggleFilter",
+          "when": "view == codebuddyHistoryView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codebuddyHistory.deleteSession",
+          "when": "view == codebuddyHistoryView && viewItem == session"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.10.0"
+  }
+}
