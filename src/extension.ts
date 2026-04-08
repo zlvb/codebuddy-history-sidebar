@@ -1,58 +1,10 @@
 import * as vscode from 'vscode';
 import { HistoryProvider, SessionItem } from './historyProvider';
-import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
 
 let outputChannel: vscode.OutputChannel;
 
 function log(msg: string) {
     outputChannel?.appendLine(`[${new Date().toLocaleTimeString()}] ${msg}`);
-}
-
-function findHistoryDir(): string | undefined {
-    const platform = os.platform();
-    let basePath: string;
-    if (platform === 'win32') {
-        basePath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-    } else if (platform === 'darwin') {
-        basePath = path.join(os.homedir(), 'Library', 'Application Support');
-    } else {
-        basePath = path.join(os.homedir(), '.config');
-    }
-
-    const historyBase = path.join(basePath, 'CodeBuddy CN', 'User', 'globalStorage',
-        'tencent-cloud.coding-copilot', 'genie-history');
-
-    if (!fs.existsSync(historyBase)) { return undefined; }
-
-    const currentCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!currentCwd) { return undefined; }
-
-    const normalizedCwd = currentCwd.replace(/\\/g, '/').toLowerCase();
-
-    try {
-        for (const dir of fs.readdirSync(historyBase, { withFileTypes: true })) {
-            if (!dir.isDirectory()) { continue; }
-            try {
-                let decoded = Buffer.from(dir.name, 'base64').toString('utf-8')
-                    .replace(/\0+$/, '').toLowerCase();
-                if (normalizedCwd.startsWith(decoded) || decoded.startsWith(normalizedCwd)) {
-                    return path.join(historyBase, dir.name);
-                }
-            } catch { /* skip */ }
-        }
-    } catch { /* skip */ }
-    return undefined;
-}
-
-function writeCurrentJson(histDir: string, convId: string): void {
-    const currentJsonPath = path.join(histDir, 'current.json');
-    fs.writeFileSync(currentJsonPath, JSON.stringify({
-        conversationId: convId,
-        lastUpdated: new Date().toISOString(),
-    }, null, 2));
-    log(`Wrote current.json → ${convId}`);
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -77,40 +29,25 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('codebuddyHistory.openSession', async (item: SessionItem) => {
             if (!item.conversationId) { return; }
             const convId = item.conversationId;
-            log(`=== Switch to: ${convId} (${item.label}) ===`);
+            log(`Switch to: ${convId} (${item.label})`);
 
-            // Step 1: 写 current.json
-            const histDir = findHistoryDir();
-            if (histDir) {
-                writeCurrentJson(histDir, convId);
-            } else {
-                log('History dir not found, falling back to chatHistory');
-                await vscode.commands.executeCommand('tencentcloud.codingcopilot.chatHistory');
-                return;
-            }
-
-            // Step 2: focus chat 面板
             try {
-                await vscode.commands.executeCommand('coding-copilot.webviews.chat.focus');
+                // 通过 chat.sendMessage 命令切换会话
+                // prefillOnly=true 只预填不发送，实现无副作用切换
+                await vscode.commands.executeCommand(
+                    'tencentcloud.codingcopilot.chat.sendMessage',
+                    {
+                        message: ' ',
+                        options: {
+                            conversationId: convId,
+                            prefillOnly: true,
+                        },
+                    }
+                );
+                log(`Switched to ${convId} via sendMessage`);
             } catch (e: any) {
-                log(`Focus failed: ${e?.message}`);
-            }
-
-            await new Promise(r => setTimeout(r, 200));
-
-            // Step 3: 只 reload webview（不重载整个窗口）
-            try {
-                await vscode.commands.executeCommand('workbench.action.webview.reloadWebviewAction');
-                log('Webview reloaded');
-            } catch (e: any) {
-                log(`Webview reload failed: ${e?.message}`);
-                // 降级：打开历史面板
-                try {
-                    await vscode.commands.executeCommand('tencentcloud.codingcopilot.chatHistory');
-                    log('Opened history panel as fallback');
-                } catch {
-                    vscode.window.showErrorMessage('无法切换对话');
-                }
+                log(`sendMessage failed: ${e?.message}`);
+                vscode.window.showErrorMessage(`切换对话失败: ${e?.message}`);
             }
         })
     );

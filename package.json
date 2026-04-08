@@ -9,7 +9,7 @@
   },
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -71,9 +71,10 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "package": "npx vsce package --no-dependencies"
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "compile:tsc": "tsc -p ./",
+    "package": "node esbuild.js --production && npx vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

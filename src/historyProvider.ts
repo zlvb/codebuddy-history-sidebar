@@ -142,7 +142,10 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
             }
 
             const initSqlJs = require('sql.js');
-            const SQL = await initSqlJs();
+            const wasmPath = path.join(__dirname, 'sql-wasm.wasm');
+            const SQL = await initSqlJs(
+                fs.existsSync(wasmPath) ? { locateFile: () => wasmPath } : undefined
+            );
             const buffer = fs.readFileSync(this.dbPath);
             const db = new SQL.Database(buffer);
 
