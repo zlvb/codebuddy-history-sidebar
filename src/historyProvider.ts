@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 
-interface SessionData {
+export interface SessionData {
     conversationId: string;
     title: string;
     status: string;
@@ -73,6 +73,10 @@ function getDateGroup(ts: number): string {
     return '更早';
 }
 
+function normalizeFsPath(input: string): string {
+    return input.replace(/\\/g, '/');
+}
+
 export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<SessionItem | undefined>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -80,10 +84,12 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
     private sessions: SessionData[] = [];
     private loaded = false;
     private dbPath: string;
+    private historyBaseDir: string;
     private showAllWorkspaces = false;
 
     constructor() {
         this.dbPath = this.resolveDbPath();
+        this.historyBaseDir = this.resolveHistoryBaseDir();
     }
 
     getDbPath(): string { return this.dbPath; }
@@ -96,6 +102,14 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
     toggleFilter(): void {
         this.showAllWorkspaces = !this.showAllWorkspaces;
         this.refresh();
+    }
+
+    hasSession(session: SessionData | null | undefined): boolean {
+        if (!session?.conversationId || !session.cwd) {
+            return false;
+        }
+        const cache = new Map<string, Set<string> | null>();
+        return this.isSessionStored(session, cache);
     }
 
     getTreeItem(element: SessionItem): vscode.TreeItem {
@@ -134,6 +148,75 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
         return path.join(basePath, 'CodeBuddy CN', 'codebuddy-sessions.vscdb');
     }
 
+    private resolveHistoryBaseDir(): string {
+        return path.join(
+            path.dirname(this.dbPath),
+            'User',
+            'globalStorage',
+            'tencent-cloud.coding-copilot',
+            'genie-history'
+        );
+    }
+
+    private encodeWorkspacePath(cwd: string): string {
+        return Buffer.from(normalizeFsPath(cwd), 'utf8')
+            .toString('base64')
+            .replace(/[\/=]/g, '_');
+    }
+
+    private getConversationIdsForWorkspace(
+        cwd: string,
+        cache: Map<string, Set<string> | null>
+    ): Set<string> | null {
+        const normalizedCwd = normalizeFsPath(cwd);
+        if (cache.has(normalizedCwd)) {
+            return cache.get(normalizedCwd) ?? null;
+        }
+
+        const conversationsDir = path.join(
+            this.historyBaseDir,
+            this.encodeWorkspacePath(cwd),
+            'conversations'
+        );
+
+        if (!fs.existsSync(conversationsDir)) {
+            cache.set(normalizedCwd, null);
+            return null;
+        }
+
+        try {
+            const conversationIds = new Set(
+                fs.readdirSync(conversationsDir, { withFileTypes: true })
+                    .filter(entry => entry.isDirectory())
+                    .map(entry => entry.name)
+            );
+            cache.set(normalizedCwd, conversationIds);
+            return conversationIds;
+        } catch (err) {
+            console.error('[CB History] read conversations dir error:', conversationsDir, err);
+            cache.set(normalizedCwd, null);
+            return null;
+        }
+    }
+
+    private isSessionStored(
+        session: SessionData,
+        cache: Map<string, Set<string> | null>
+    ): boolean {
+        const conversationIds = this.getConversationIdsForWorkspace(session.cwd, cache);
+        return !!conversationIds?.has(session.conversationId);
+    }
+
+    private filterDeletedSessions(sessions: SessionData[]): SessionData[] {
+        const cache = new Map<string, Set<string> | null>();
+        const existingSessions = sessions.filter(session => this.isSessionStored(session, cache));
+        const deletedCount = sessions.length - existingSessions.length;
+        if (deletedCount > 0) {
+            console.log(`[CB History] filtered ${deletedCount} deleted sessions`);
+        }
+        return existingSessions;
+    }
+
     private async loadSessions(): Promise<void> {
         try {
             if (!fs.existsSync(this.dbPath)) {
@@ -161,19 +244,19 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
             for (const row of results[0].values) {
                 try {
                     const data = JSON.parse(row[0] as string) as SessionData;
-                    if (data.conversationId && data.createdAt) {
+                    if (data.conversationId && data.createdAt && data.cwd) {
                         allSessions.push(data);
                     }
                 } catch { /* skip malformed */ }
             }
 
-            let filtered = allSessions;
+            let filtered = this.filterDeletedSessions(allSessions);
             if (!this.showAllWorkspaces) {
                 const currentCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
                 if (currentCwd) {
-                    const normCwd = currentCwd.replace(/\\/g, '/').toLowerCase();
-                    const cwdFiltered = allSessions.filter(s => {
-                        const sCwd = (s.cwd || '').replace(/\\/g, '/').toLowerCase();
+                    const normCwd = normalizeFsPath(currentCwd).toLowerCase();
+                    const cwdFiltered = filtered.filter(s => {
+                        const sCwd = normalizeFsPath(s.cwd || '').toLowerCase();
                         return sCwd === normCwd || sCwd.startsWith(normCwd + '/');
                     });
                     if (cwdFiltered.length > 0) {

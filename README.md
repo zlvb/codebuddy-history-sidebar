@@ -37,7 +37,8 @@ buddycn --install-extension codebuddy-history-sidebar-0.1.0.vsix
 ## 原理
 
 1. 从 CodeBuddy 的 SQLite 数据库（`codebuddy-sessions.vscdb`）读取历史对话元数据，用 [sql.js](https://github.com/sql-js/sql.js)（纯 WASM）解析
-2. 切换对话时，修改 CodeBuddy 的 `current.json` 指向目标对话，然后 reload webview 触发重新加载
+2. 切换对话时，调用 CodeBuddy 内部命令 `tencentcloud.codingcopilot.chat.sendMessage`，通过 `conversationId + prefillOnly` 进行轻量切换
+3. 展示前会校验 `genie-history/.../conversations/<conversationId>` 是否真实存在，自动过滤已删除会话
 
 ## 兼容性
 

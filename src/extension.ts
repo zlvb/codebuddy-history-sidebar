@@ -24,16 +24,20 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('codebuddyHistory.toggleFilter', () => provider.toggleFilter())
     );
 
-    // 点击条目 → 切换对话
     context.subscriptions.push(
         vscode.commands.registerCommand('codebuddyHistory.openSession', async (item: SessionItem) => {
             if (!item.conversationId) { return; }
+            if (!provider.hasSession(item.session)) {
+                log(`Skip deleted session: ${item.conversationId}`);
+                provider.refresh();
+                void vscode.window.showWarningMessage('该历史对话已被删除，已从侧边栏移除。');
+                return;
+            }
+
             const convId = item.conversationId;
             log(`Switch to: ${convId} (${item.label})`);
 
             try {
-                // 通过 chat.sendMessage 命令切换会话
-                // prefillOnly=true 只预填不发送，实现无副作用切换
                 await vscode.commands.executeCommand(
                     'tencentcloud.codingcopilot.chat.sendMessage',
                     {
