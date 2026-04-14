@@ -2,7 +2,7 @@
   "name": "codebuddy-history-sidebar",
   "displayName": "CodeBuddy History Sidebar",
   "description": "常驻侧边栏显示 CodeBuddy 历史对话，点击即可切换",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "publisher": "cppzhang",
   "engines": {
     "vscode": "^1.80.0"

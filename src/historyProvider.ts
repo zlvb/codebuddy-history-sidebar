@@ -11,6 +11,7 @@ export interface SessionData {
     updatedAt: number;
     cwd: string;
     userId?: string;
+    deletedAt?: number;
 }
 
 export class SessionItem extends vscode.TreeItem {
@@ -164,6 +165,29 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
             .replace(/[\/=]/g, '_');
     }
 
+    /**
+     * Find the actual workspace dir in genie-history.
+     * CodeBuddy may truncate the base64-encoded dir name (e.g. to 64 chars),
+     * so we fall back to prefix matching when an exact match is not found.
+     */
+    private resolveWorkspaceDir(cwd: string): string | null {
+        const encoded = this.encodeWorkspacePath(cwd);
+        const exact = path.join(this.historyBaseDir, encoded);
+        if (fs.existsSync(exact)) {
+            return exact;
+        }
+        // Prefix match: CodeBuddy may truncate the base64 dir name
+        try {
+            const dirs = fs.readdirSync(this.historyBaseDir, { withFileTypes: true });
+            for (const entry of dirs) {
+                if (entry.isDirectory() && encoded.startsWith(entry.name) && entry.name.length >= 16) {
+                    return path.join(this.historyBaseDir, entry.name);
+                }
+            }
+        } catch { /* ignore */ }
+        return null;
+    }
+
     private getConversationIdsForWorkspace(
         cwd: string,
         cache: Map<string, Set<string> | null>
@@ -173,12 +197,13 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
             return cache.get(normalizedCwd) ?? null;
         }
 
-        const conversationsDir = path.join(
-            this.historyBaseDir,
-            this.encodeWorkspacePath(cwd),
-            'conversations'
-        );
+        const wsDir = this.resolveWorkspaceDir(cwd);
+        if (!wsDir) {
+            cache.set(normalizedCwd, null);
+            return null;
+        }
 
+        const conversationsDir = path.join(wsDir, 'conversations');
         if (!fs.existsSync(conversationsDir)) {
             cache.set(normalizedCwd, null);
             return null;
@@ -244,7 +269,7 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionItem> {
             for (const row of results[0].values) {
                 try {
                     const data = JSON.parse(row[0] as string) as SessionData;
-                    if (data.conversationId && data.createdAt && data.cwd) {
+                    if (data.conversationId && data.createdAt && data.cwd && !data.deletedAt) {
                         allSessions.push(data);
                     }
                 } catch { /* skip malformed */ }
